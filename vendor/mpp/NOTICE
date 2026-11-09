@@ -1,0 +1,19 @@
+Lettore MPP
+Copyright (C) 2026 gli autori di Lettore MPP
+Distribuito sotto GNU Lesser General Public License 2.1 o, a scelta, qualsiasi versione successiva
+(vedi LICENSE).
+
+Componenti e materiali di terzi
+-------------------------------
+
+MPXJ — https://www.mpxj.org
+  Copyright (C) Packwood Software, Jon Iles e collaboratori.
+  Licenza: LGPL-2.1 o, a scelta, qualsiasi versione successiva.
+  La logica di lettura del formato MPP in src/mpp/ è ricavata dal codice sorgente di MPXJ.
+  I file in samples/*.mpp provengono dai dati di test di MPXJ (junit/data), stessa licenza.
+  I file in samples/expected/*.json sono generati con MPXJ (scripts/oracle).
+
+cfb — https://github.com/SheetJS/js-cfb
+  Copyright (C) 2013-present SheetJS LLC. Licenza: Apache License 2.0.
+  Incluso nel file distribuito dist/lettore-mpp.html; testo della licenza in node_modules/cfb/LICENSE
+  e nella sezione "Licenze" della pagina.
