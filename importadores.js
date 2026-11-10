@@ -1,3 +1,4 @@
+import {dailyHours,msCalendars,xerCalendars,pmCalendars} from './calendarios.js';
 import {readMpp,openProject} from './vendor/mpp/reader.js';
 export const DAY=86400000;
 export const iso=ms=>new Date(ms).toISOString().slice(0,10);
@@ -45,8 +46,25 @@ function endpoints(t,actualEnd){
 }
 const profileNote='Perfil por fechas de fin: los totales del programa se acumulan al término de cada actividad. El real se ubica en su fin real o inmediatamente antes del corte de origen. No representa una distribución por calendario laboral.';
 function external(p,t,actualEnd){t.marker=t.marker??false;t.type=t.marker&&t.type==='Tarea'?'Hito':t.type;t.key??=t.id;endpoints(t,actualEnd||(p.day?iso(Date.parse(p.day)-DAY):null));p.tasks.push(t);p.note=profileNote}
+function spreadDaily(t,key,days,values){
+ const sum=days.reduce((v,row)=>v+row[1],0);if(!sum)return;
+ for(const [d,w] of days)for(const [metric,amount] of Object.entries(values))if(amount!=null && amount>0)add(t,metric,key,d,amount*w/sum);
+}
+function byCalendar(p,t,cals,id,start,finish,actualStart,actualFinish,baseDates={}){
+ t.marker=t.marker??false;t.type=t.marker&&t.type==='Tarea'?'Hito':t.type;t.key??=t.id;
+ const days=dailyHours(cals,id,start,finish);
+ spreadDaily(t,'Programa',days,{'Duración':t.minutes,'Costos':t.cost,'Recursos':t.work});
+ spreadDaily(t,'Real',dailyHours(cals,id,actualStart,actualFinish),{'Duración':t.done,'Costos':t.actualCost,'Recursos':t.actualWork});
+ for(const [key,ref] of Object.entries(t.refs)){
+  const [first,last]=baseDates[key]||[ref.start,ref.end];
+  spreadDaily(t,key,dailyHours(cals,id,first,last),{'Duración':ref.minutes,'Costos':ref.cost,'Recursos':ref.work});
+ }
+ if(!days.length && t.minutes>0 && t.type!=='Resumen WBS'){t.profile='Sin perfil diario laborable verificable';p.missing=(p.missing||0)+1}
+ p.note='Distribución proporcional a los minutos laborables de cada día.'+(p.missing?' Curva parcial: '+p.missing+' actividades sin perfil programado verificable.':'');
+ p.tasks.push(t);
+}
 function microsoft(root,name){
- const p=project(val(root,'Name')||name,date(val(root,'StatusDate'))),stack=[];
+ const p=project(val(root,'Name')||name,date(val(root,'StatusDate'))),stack=[],cals=msCalendars(root);
  for(const n of list(child(root,'Tasks'),'Task')){
   if(truth(val(n,'IsNull')))continue;
   const t=task(val(n,'UID'),val(n,'Name')),level=num(n,'OutlineLevel')??1;
@@ -55,7 +73,9 @@ function microsoft(root,name){
   Object.assign(t,{start:date(val(n,'Start')),end:date(val(n,'Finish')),minutes:duration(val(n,'Duration')),done:duration(val(n,'ActualDuration')),pct:num(n,'PercentComplete'),physical:num(n,'PhysicalPercentComplete'),critical:truth(val(n,'Critical')),marker:truth(val(n,'Milestone')),cost:num(n,'Cost'),actualCost:num(n,'ActualCost')});
   const work=duration(val(n,'Work')),actual=duration(val(n,'ActualWork'));t.work=work==null?null:work/60;t.actualWork=actual==null?null:actual/60;
   for(const b of list(n,'Baseline')){const w=duration(val(b,'Work'));t.refs['Base MS '+(val(b,'Number')||'0')]={start:date(val(b,'Start')),end:date(val(b,'Finish')),minutes:duration(val(b,'Duration')),cost:num(b,'Cost'),work:w==null?null:w/60}}
-  external(p,t,date(val(n,'ActualFinish')));
+  const chosen=val(n,'CalendarUID'),id=chosen&&chosen!=='-1'?chosen:(val(root,'CalendarUID')||'standard');
+  const baseDates=Object.fromEntries(list(n,'Baseline').map(b=>['Base MS '+(val(b,'Number')||'0'),[val(b,'Start'),val(b,'Finish')]]));
+  byCalendar(p,t,cals,id,val(n,'Start'),val(n,'Finish'),val(n,'ActualStart'),val(n,'ActualFinish')||val(root,'StatusDate'),baseDates);
  }
  return p;
 }
@@ -63,6 +83,7 @@ const p6type={TT_Task:'Dependiente de tarea',TT_Rsrc:'Dependiente de recursos',T
 function xer(text){
  const tables={};let active=null,fields=[];
  for(const line of text.split(/\r?\n/)){const [tag,...v]=line.split('\t');if(tag==='%T')active=tables[v[0]]??=[];else if(tag==='%F')fields=v;else if(tag==='%R'&&active)active.push(Object.fromEntries(fields.map((k,i)=>[k,v[i]??''])))}
+ const cals=xerCalendars(tables.CALENDAR||[]);
  return (tables.PROJECT||[]).map(pr=>{
   const p=project(pr.proj_short_name||pr.proj_id,date(pr.last_recalc_date),true);const groups=(tables.PROJWBS||[]).filter(n=>n.proj_id===pr.proj_id);
   p.groups=groups.map(n=>({id:n.wbs_id,parent:n.parent_wbs_id,name:n.wbs_short_name+' '+n.wbs_name}));
@@ -71,15 +92,26 @@ function xer(text){
    if(n.status_code==='TK_NotStart')t.done=0;else if(t.minutes!=null&&rem!=null)t.done=Math.max(0,t.minutes-rem*60);
    t.pct=n.status_code==='TK_Complete'?100:t.minutes>0&&t.done!=null?100*t.done/t.minutes:null;
    const fl=number(n.total_float_hr_cnt);t.critical=pr.critical_path_type==='CT_DrivPath'?truth(n.driving_path_flag):fl==null?null:fl<=(number(pr.critical_drtn_hr_cnt)??0);
-   t.steps=(tables.TASKPROC||[]).filter(a=>a.task_id===t.id).map(a=>({Nombre:a.proc_name,Orden:number(a.seq_num),Peso:number(a.proc_wt),Avance:number(a.complete_pct)}));external(p,t,date(n.act_end_date));
+   t.steps=(tables.TASKPROC||[]).filter(a=>a.task_id===t.id).map(a=>({Nombre:a.proc_name,Orden:number(a.seq_num),Peso:number(a.proc_wt),Avance:number(a.complete_pct)}));const start=n.act_start_date||n.early_start_date||n.target_start_date,end=n.act_end_date||n.early_end_date||n.target_end_date;
+   let calendar=n.clndr_id;
+   if(n.task_type==='TT_Rsrc'){const ids=new Set((tables.TASKRSRC||[]).filter(a=>a.task_id===n.task_id&&a.proj_id===pr.proj_id).map(a=>(tables.RSRC||[]).find(r=>r.rsrc_id===a.rsrc_id)?.clndr_id));calendar=ids.size===1?[...ids][0]:null}
+   const actualEnd=n.act_end_date||pr.last_recalc_date;
+   if(n.act_start_date&&actualEnd){const worked=dailyHours(cals,calendar,n.act_start_date,actualEnd);
+    if(worked.length){t.done=worked.reduce((v,entry)=>v+entry[1],0);if(rem!=null)t.minutes=t.done+rem*60}}
+   byCalendar(p,t,cals,calendar,start,end,n.act_start_date,actualEnd);
   }return p;
  });
 }
 function p6xml(root){return list(root,'Project').map(n=>{
- const p=project(val(n,'Name'),date(val(n,'DataDate')),true);p.groups=list(n,'WBS').map(w=>({id:val(w,'ObjectId'),parent:val(w,'ParentObjectId'),name:(val(w,'Code')||'')+' '+val(w,'Name')}));
+ const p=project(val(n,'Name'),date(val(n,'DataDate')),true),cals=pmCalendars(root,n);p.groups=list(n,'WBS').map(w=>({id:val(w,'ObjectId'),parent:val(w,'ParentObjectId'),name:(val(w,'Code')||'')+' '+val(w,'Name')}));
  for(const a of list(n,'Activity')){const t=task(val(a,'ObjectId'),val(a,'Name'));Object.assign(t,{parent:val(a,'WBSObjectId'),key:val(a,'Id'),code:val(a,'Id'),type:p6type[val(a,'Type')]||val(a,'Type'),start:date(val(a,'StartDate')),end:date(val(a,'FinishDate')),minutes:hours(num(a,'AtCompletionDuration')),done:hours(num(a,'ActualDuration')),work:num(a,'AtCompletionLaborUnits'),actualWork:num(a,'ActualLaborUnits'),cost:num(a,'AtCompletionTotalCost'),actualCost:num(a,'ActualTotalCost')});t.marker=t.type?.startsWith('Hito');t.physical=num(a,'PhysicalPercentComplete')==null?null:num(a,'PhysicalPercentComplete')*100;t.pct=num(a,'PercentComplete')==null?null:num(a,'PercentComplete')*100;
   const fl=num(a,'TotalFloat');t.critical=val(n,'CriticalActivityPathType')==='Longest Path'?truth(val(a,'IsLongestPath')):fl==null?null:fl<=(num(n,'CriticalActivityFloatThreshold')??0);
-  t.steps=list(n,'ActivityStep').filter(x=>val(x,'ActivityObjectId')===t.id).map(x=>({Nombre:val(x,'Name'),Orden:num(x,'SequenceNumber'),Peso:num(x,'Weight'),Avance:num(x,'PercentComplete')==null?null:100*num(x,'PercentComplete')}));external(p,t,date(val(a,'ActualFinishDate')));
+  t.steps=list(n,'ActivityStep').filter(x=>val(x,'ActivityObjectId')===t.id).map(x=>({Nombre:val(x,'Name'),Orden:num(x,'SequenceNumber'),Peso:num(x,'Weight'),Avance:num(x,'PercentComplete')==null?null:100*num(x,'PercentComplete')}));let calendar=val(a,'CalendarObjectId')||val(n,'ActivityDefaultCalendarObjectId');
+  if(t.type==='Dependiente de recursos'){
+   const res=[...list(root,'Resource'),...list(n,'Resource')];const ids=new Set(list(n,'ResourceAssignment').filter(r=>val(r,'ActivityObjectId')===t.id).map(r=>val(res.find(e=>val(e,'ObjectId')===val(r,'ResourceObjectId')),'CalendarObjectId')));
+   calendar=ids.size===1?[...ids][0]:null;
+  }
+  byCalendar(p,t,cals,calendar,val(a,'StartDate'),val(a,'FinishDate'),val(a,'ActualStartDate'),val(a,'ActualFinishDate')||val(n,'DataDate'));
  }return p;
 })}
 function mpp(bytes,name){
@@ -127,4 +159,5 @@ export async function read(file){
  if(r.localName==='APIBusinessObjects')return p6xml(r);
  throw Error('Formato desconocido. Seleccione XML de Tracker, Microsoft Project o Primavera P6, XER o MPP.');
 }
+
 
