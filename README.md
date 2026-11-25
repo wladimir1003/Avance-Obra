@@ -1,6 +1,6 @@
 # Control de proyectos · edición para GitHub Pages
 
-1. Descomprima GitHub-Pages.zip y suba su contenido a la raíz de un repositorio. Mantenga la carpeta vendor y todos los archivos JavaScript junto a index.html en la estructura que trae el ZIP.
+1. Descomprima GitHub-Pages.zip y suba su contenido a la raíz de un repositorio. El index.html es la edición independiente completa: incluye las bibliotecas y puede publicarse por sí solo.
 2. En Settings → Pages, seleccione Deploy from a branch, la rama que contiene los archivos (por ejemplo main), la carpeta /(root) y Save.
 3. Abra la dirección que GitHub muestre en Pages una vez finalizada la publicación. El botón Abrir cronograma lee archivos del dispositivo del visitante. Los cronogramas de trabajo no deben subirse al repositorio para abrirlos.
 
@@ -21,7 +21,13 @@ También se distribuye Avance-independiente.html, con las bibliotecas incluidas 
 
 ## Componentes
 
-La carpeta vendor incluye el código fuente del lector MPP de danielestop/mpp-viewer, revisión 535b7cdc4b03b4d00e1e51843e235285405fa1b7, y cfb 1.2.2 de SheetJS. Se conservan los avisos y licencias. El código JavaScript de los módulos del sitio se puede editar directamente.
+La carpeta vendor incluye el código fuente del lector MPP de danielestop/mpp-viewer, revisión 535b7cdc4b03b4d00e1e51843e235285405fa1b7, y cfb 1.2.2 de SheetJS. Se conservan los avisos y licencias. Se conservan los módulos originales como referencia. La página publicada ejecuta el código incluido en index.html; editar los módulos externos no modifica esta edición independiente.
 
 Documentación de publicación: https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site
 
+
+## Actualización del 25 de noviembre de 2026
+
+index.html se copió íntegramente de Instaladores/Windows/Avance-independiente.html, versión del 15 de noviembre de 2026, idéntica a Instaladores/Linux/Avance.html e Instaladores/macOS/Avance.html. Incluye los arreglos de esa entrega. Avance.html de Windows requiere su servidor local y no debe utilizarse como página estática.
+
+Para actualizar un repositorio existente, sustituya index.html en la raíz de publicación. Si descarga el ZIP, descomprímalo antes de subir su contenido; no suba el ZIP como página.
